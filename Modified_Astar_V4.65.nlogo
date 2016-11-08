@@ -423,10 +423,9 @@ to erase
  reset-ticks
  ask (turtle-set ships nodes halos banners) [die]
  ask waypoints [ set size 4 set shape "circle" set color orange ]
- ask patches [ifelse elev >= 0 [set pcolor scale-color green  elev 0 2000][set pcolor scale-color blue elev -3500 0]]
+ ask patches with [pcolor = gray]  [ifelse elev >= 0 [set pcolor scale-color green  elev 0 2000][set pcolor scale-color blue elev -3500 0]]
 
 end
-
 
 
 
@@ -711,7 +710,7 @@ INPUTBOX
 240
 280
 max-speed
-2
+2000
 1
 0
 Number
