@@ -1,50 +1,29 @@
 extensions [
   gis
   ]
+
 globals [
-  elevation
-  open
-  closed
   destination
-  optimal-path
   ]
+
 breed [waypoints waypoint]
 breed [nodes node]
 breed [ships ship]
-breed [halos halo]
 breed [banners banner]
 
 patches-own [
   elev
-  distance-to-land
   land
   parent-patch
-  f
-  g
-  h
   ]
 
 ships-own [
   current-waypoint
-  target-waypoint
-  path
   current-path
-  location
   speed
-  ship-distance
-  time
-  closest-nieghbor
-  nieghbor-prox
-  nieghbor-direction
-  firstdist
+  ship-distance ;How long advance in each tick
   totaltime
-  timelist
-  extra-ticks
-  normal-ticks
-  total-ticks
   ]
-
-waypoints-own []
 
 nodes-own [
   shipID
@@ -59,79 +38,43 @@ to setup
 end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; draw-map ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+to color-map
+  ask patches with [elev >= 0]
+  [
+    set pcolor scale-color green elev 0 2000
+    set land true
+  ]
+  ask patches with [elev < 0]
+  [
+    set pcolor scale-color blue elev -3500 0
+    set land false
+  ]
+end
 
 to draw-map
-
-;;load .asc
   let  data-source  "UTM/raster_PM.asc"
-  set elevation gis:load-dataset data-source
+  let elevation gis:load-dataset data-source
   let world (gis:envelope-of elevation)
-
   file-open data-source
   let n-cols read-from-string remove "ncols" file-read-line
   let n-rows read-from-string remove "nrows" file-read-line
   resize-world 0 n-cols 0 n-rows
   file-close
-  ;set-patch-size patch-size * zoom
-
-   if zoom != 1
+  if zoom != 1
   [
-    let x0 (item 0 world + item 1 world) / 2          let y0 (item 2 world + item 3 world) / 2
-    let W0 zoom * (item 0 world - item 1 world) / 2   let H0 zoom * (item 2 world - item 3 world) / 2
+    let x0 (item 0 world + item 1 world) / 2
+    let y0 (item 2 world + item 3 world) / 2
+    let W0 zoom * (item 0 world - item 1 world) / 2
+    let H0 zoom * (item 2 world - item 3 world) / 2
     set world (list (x0 - W0) (x0 + W0) (y0 - H0) (y0 + H0))
   ]
-
-;;elevation patch color
   gis:set-world-envelope-ds (world)
-  gis:apply-raster  elevation elev
-  ask patches [ifelse elev >= 0 [set pcolor scale-color green  elev 0 2000][set pcolor scale-color blue elev -3500 0]]
-
-;; find land
-ask patches
-
-[
-  if elev > 0
-  [
-    set land true
-  ]
-]
-reset-ticks
-
+  gis:apply-raster elevation elev
+  color-map
+  reset-ticks
 end
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; place-turtles ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-to place-turtles
-foreach sort waypoints
-[
- ask ?
- [
-  if self != destination
-  [
-    let s who
-  hatch-ships 1
-   [
-     let min-speed  max-speed * (1 - speed-variation)
-     set speed min-speed + random-float (max-speed - min-speed)
-     set ship-distance (time-interval / 3600) * speed
-     set current-waypoint self
-     set size 3
-     set shape "boat top"
-     set color red
-     set pen-size 1
-     set target-waypoint destination
-     face target-waypoint
-     place-halo
-     set timelist []
-     set extra-ticks 0
-   ]
-  ]
- ]
-]
-
-end
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; create (waypoints, obstacles & ships) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to place-waypoint
   if mouse-down?
   [
@@ -142,51 +85,60 @@ to place-waypoint
         set size 4
         set shape "circle"
         set color orange
-        ]
       ]
+    ]
     stop
   ]
-  end
+end
 
 to place-obstacle
   if mouse-down?
   [
     ask patch mouse-xcor mouse-ycor
     [
-     set elev 100
-     set pcolor black
-     ask neighbors
-     [
-       set elev 100
-       set pcolor black
-     ]
+      set elev 100
+      set pcolor black
+      ask neighbors
+      [
+        set elev 100
+        set pcolor black
+      ]
     ]
   ]
 end
 
-to place-halo
-    hatch-halos 1
+to place-ships
+  ask ships [die]
+  ask waypoints with [self != destination]
+  [
+    hatch-ships 1
     [
-      set shape "thin ring"
-      set size 7
-      set color lput 180 extract-rgb color
-      __set-line-thickness .5
-      create-link-from myself
-      [
-        tie
-        hide-link
-        ]
-      ]
+      let min-speed  max-speed * (1 - speed-variation)
+      set speed min-speed + random-float (max-speed - min-speed)
+
+      set ship-distance (speed * time-interval) / 3600 ; in kilometres
+      output-show (word "Speed: " speed "km/h Ship-distance: " ship-distance " km every " time-interval " second")
+      set totaltime 0
+      set current-waypoint self
+      set size 3
+      set shape "boat top"
+      set color red
+      set pen-size 1
+    ]
+  ]
 end
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; A* ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to label-destination
+  ask banners [die]
   ask waypoints with-max [who]
   [
     set destination self
     set shape "star"
     set size 6
     hatch-banners 1
-    [ set size 0
+    [
+      set size 0
       set label "Desination"
       set label-color red
       create-link-from myself
@@ -200,136 +152,76 @@ to label-destination
     ]
   ]
 end
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; A* ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 to find-shortest-path-to-destination
   label-destination
-  place-turtles
-  foreach sort ships
+  place-ships
+  ask ships
   [
-   ask ?
-   [
     if (self != destination)
     [
-      set path find-a-path current-waypoint target-waypoint
-      set optimal-path path
-      set current-path path
-      output-show (word  "Shortest Path Length: " length optimal-path " (" "LP: " land-prox "," " LPW: " land-prox-weight ")")
+      set current-path find-a-path current-waypoint destination
+      output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " length current-path)
+      color-map
     ]
-   ]
   ]
-
 end
 
-
-
-; the actual implementation of the A* path finding algorithm
-; it takes the source and destination patches as inputs
-; and reports the optimal path if one exists between them as output
-to-report find-a-path [ source-patch destination-patch]
-
-  ; initialize all variables to default values
+to-report find-a-path [source-patch destination-patch]
   let search-done? false
-  let search-path []
   let current-patch 0
-  set open []
-  set closed []
 
-  ; add source patch in the open list
+  let open []
   set open lput source-patch open
 
-  ; loop until we reach the destination or the open list becomes empty
-  while [ search-done? != true]
+  while [ search-done? != true and length open != 0 ]
   [
-    ifelse length open != 0
+    set current-patch item 0 open
+    set open remove-item 0 open
+    ask current-patch
     [
-      ; sort the patches in open list in increasing order of their f() values
-      set open sort-by [[h] of ?1 < [h] of ?2] open
-
-      ; take the first patch in the open list
-      ; as the current patch (which is currently being explored (n))
-      ; and remove it from the open list
-      set current-patch item 0 open
-      set open remove-item 0 open
-
-      ; add the current patch to the closed list
-      ; set closed lput current-patch closed
-
-      ; explore the neighbours of the current patch
-      ask current-patch
+      ifelse pxcor = [pxcor] of destination-patch and pycor = [pycor] of destination-patch
       [
-        ; if any of the neighbours is the destination stop the search process
-        ifelse any? neighbors with [ (pxcor = [ pxcor ] of destination-patch) and (pycor = [pycor] of destination-patch)]
+        set search-done? true
+      ]
+      [
+        ask neighbors4 with [ elev <= min-depth and pcolor != gray ]
         [
-          set search-done? true
+            set pcolor gray
+            set open lput self open
+            set parent-patch current-patch
         ]
+        ask neighbors with [ elev <= min-depth and pcolor != gray]
         [
-          ; the neighbors should not be obstacles or already explored patches (part of the closed list)
-          ask neighbors with [ elev <= min-depth and pcolor != gray ]
-          [
-            ; the neighbors to be explored should also not be the source or
-            ; destination patches or already a part of the open list (unexplored patches list)
-            let alreadyVisited [pcolor] of self
-            if alreadyVisited != gray and self != destination-patch
-            [
-              set pcolor gray
-
-              ; add the eligible patch to the open list
-              set open lput self open
-
-              ; update the path finding variables of the eligible patch
-              set parent-patch current-patch
-              set g [g] of parent-patch  + 1
-              set h distance destination-patch
-            ]
-
-          ]
+          set pcolor gray
+          set open lput self open
+          set parent-patch current-patch
         ]
       ]
     ]
-    [
-      ; if a path is not found (search is incomplete) and the open list is exhausted
-      ; display a user message and report an empty search path list.
-      user-message( "A path from the source to the destination does not exist." )
-      report []
-    ]
   ]
 
-  ; if a path is found (search completed) add the current patch
-  ; (node adjacent to the destination) to the search path.
-  set search-path lput current-patch search-path
-
-  ; trace the search path from the current patch
-  ; all the way to the source patch using the parent patch
-  ; variable which was set during the search for every patch that was explored
-  let temp first search-path
-  while [ temp != source-patch ]
+  if search-done? != true
   [
-    ask temp
+    user-message( "A path from the source to the destination does not exist." )
+    report []
+  ]
+  let search-path []
+  while [ current-patch != source-patch ]
+  [
+    ask current-patch
     [
       set pcolor white
     ]
-    set search-path lput [parent-patch] of temp search-path
-    set temp [parent-patch] of temp
+    set search-path fput current-patch search-path
+    set current-patch [parent-patch] of current-patch
   ]
-
-  ; add the destination patch to the front of the search path
-  set search-path fput destination-patch search-path
-
-  ; reverse the search path so that it starts from a patch adjacent to the
-  ; source patch and ends at the destination patch
-  set search-path reverse search-path
-
-  ; report the search path
   report search-path
 end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; MOVE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-; make the turtle traverse the path all the way to the destination patch
-
 to go
-    while [any? ships with [length current-path != 0]] [move]
+    while [any? ships with [length current-path != 0]][move]
     stop
 end
 
@@ -337,98 +229,55 @@ to move
   tick
   ask ships with [length current-path != 0]
       [
-
-        ;set location list xcor ycor
-        ;set firstdist distance first current-path
-
         go-to-next-patch-in-current-path
-
-
-        ;; node procs ;;
-        let v who
-        let s speed
-        let q totaltime
-        hatch-nodes 1 [set size .9 set shape "circle" set color red set shipID v set shipspeed s set nodetime q ]
+        set totaltime totaltime + time-interval
+        if length current-path = 0
+        [
+          output-show (word "Ship arrived after " (totaltime / 60) " minutes")
+        ]
+        hatch-nodes 1 [
+          set size .9
+          set shape "circle"
+          set color red
+          set shipID [who] of myself
+          set shipspeed [speed] of myself
+          set nodetime [totaltime] of myself
+          ]
       ]
 end
 
 to go-to-next-patch-in-current-path
-  ;set closest-nieghbor min-one-of other ships [distance myself]
-  ;set nieghbor-prox distance closest-nieghbor
-  ;set nieghbor-direction towards closest-nieghbor
-
-  ;if nieghbor-prox <= min-ship-distance
-   ; [
-   ;   if nieghbor-direction
-   ; ]
-
-
-
-  face first current-path
-  set total-ticks total-ticks + 1
-  ifelse distance first current-path <= ship-distance
-    [
-      set extra-ticks (1 - (distance first current-path / ship-distance)) + extra-ticks
-      print (distance first current-path / ship-distance)
-      output-show (word "extra " distance first current-path " -  " ship-distance)
-      move-to first current-path
-      ;fd distance first current-path
-      set current-path remove-item 0 current-path
-
-    ]
-    [
-      set normal-ticks normal-ticks + 1
-      fd ship-distance
-    ]
-
-
-
-  ;fd ship-distance
- ; set heading towards first current-path
-
-  ;set time ticks  / (60 / time-interval)
-  ;set timelist lput time timelist
-  set totaltime  (ticks - extra-ticks) * time-interval / 60
-
-
-
-
-   ;set current-path current-path
-
-
+  let current-patch first current-path
+  face current-patch
+  if patch-here = current-patch
+  [
+    set current-path remove-item 0 current-path
+  ]
+  fd ship-distance
 end
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; EXTRAS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 to-report meters-per-patch
-
   let world gis:world-envelope ; [ minimum-x maximum-x minimum-y maximum-y ]
   let x-meters-per-patch (item 1 world - item 0 world) / (max-pxcor - min-pxcor)
   let y-meters-per-patch (item 3 world - item 2 world) / (max-pycor - min-pycor)
   report mean list x-meters-per-patch y-meters-per-patch
-
 end
 
 to export-shp
-
   let abc gis:turtle-dataset nodes
   let filename "NewRoute_"
   set filename (word filename "SS" land-prox "_" "W" land-prox-weight ".shp")
   gis:store-dataset abc filename
-
 end
 
 to erase
- reset-ticks
- ask (turtle-set ships nodes halos banners) [die]
- ask waypoints [ set size 4 set shape "circle" set color orange ]
- ask patches with [pcolor = gray]  [ifelse elev >= 0 [set pcolor scale-color green  elev 0 2000][set pcolor scale-color blue elev -3500 0]]
-
+  reset-ticks
+  ask (turtle-set ships nodes banners) [die]
+  ask waypoints [ set size 4 set shape "circle" set color orange ]
+  color-map
 end
-
-
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 280
@@ -526,10 +375,10 @@ NIL
 1
 
 SLIDER
-10
-355
-130
-388
+830
+490
+950
+523
 land-prox-weight
 land-prox-weight
 0
@@ -541,10 +390,10 @@ NIL
 HORIZONTAL
 
 INPUTBOX
-10
-285
-100
-345
+735
+450
+825
+510
 land-prox
 5
 1
@@ -608,10 +457,10 @@ precision meters-per-patch 5
 11
 
 SLIDER
-150
-285
-270
-318
+605
+450
+725
+483
 speed-variation
 speed-variation
 0
@@ -623,9 +472,9 @@ NIL
 HORIZONTAL
 
 TEXTBOX
-160
+180
 200
-310
+255
 218
 Ship Variables
 11
@@ -633,10 +482,10 @@ Ship Variables
 1
 
 TEXTBOX
-15
-433
-165
-453
+10
+440
+160
+460
 World Variables
 11
 0.0
@@ -663,10 +512,10 @@ A* Variables
 1
 
 SLIDER
-150
-325
-270
-358
+830
+450
+950
+483
 min-ship-distance
 min-ship-distance
 0
@@ -678,10 +527,10 @@ NIL
 HORIZONTAL
 
 TEXTBOX
+120
+210
 135
-205
-150
-355
+360
 |\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n
 11
 0.0
@@ -707,19 +556,19 @@ NIL
 INPUTBOX
 150
 220
-240
+215
 280
 max-speed
-2000
+80
 1
 0
 Number
 
 SLIDER
-110
-455
-270
-488
+280
+445
+440
+478
 zoom
 zoom
 0.1
@@ -731,26 +580,46 @@ NIL
 HORIZONTAL
 
 MONITOR
-10
-505
-67
-550
+110
+455
+180
+500
 minutes
-ticks / (60 / time-interval)
+( ticks * time-interval ) / 60
 5
 1
 11
 
 INPUTBOX
+145
+295
+215
 355
-475
-507
-535
 time-interval
 1
 1
 0
 Number
+
+TEXTBOX
+220
+255
+250
+273
+km/h
+11
+0.0
+1
+
+TEXTBOX
+220
+335
+270
+361
+seconds
+11
+0.0
+1
 
 @#$#@#$#@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;TO DO NOTES;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
