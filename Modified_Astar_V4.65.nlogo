@@ -19,8 +19,6 @@ patches-own [
   ]
 
 ships-own [
-  current-waypoint
-  current-path
   speed
   ship-distance ;How long advance in each tick
   totaltime
@@ -110,17 +108,15 @@ end
 
 to place-ships
   ask ships [die]
-  ask waypoints with [self != destination]
+  ask waypoints with [patch-here != destination]
   [
     hatch-ships 1
     [
       let min-speed  max-speed * (1 - speed-variation)
       set speed min-speed + random-float (max-speed - min-speed)
-
       set ship-distance (speed * time-interval) / 3600 ; in kilometres
       output-show (word "Speed: " speed "km/h Ship-distance: " ship-distance " km every " time-interval " second")
       set totaltime 0
-      set current-waypoint self
       set size 3
       set shape "boat top"
       set color red
@@ -138,7 +134,7 @@ to label-destination
   ]
   ask waypoints with-max [who]
   [
-    set destination self
+    set destination patch-here
     set shape "star"
     set size 6
     set cost 0
@@ -169,15 +165,15 @@ to find-shortest-path-to-ships
   ]
   ask ships
   [
-    ifelse [cost] of current-waypoint = count patches * 2
+    ifelse [cost] of patch-here = count patches * 2
     [
       output-show (word "A path from the source to the destination does not exist." )
+      die
     ]
     [
-      output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " [cost] of current-waypoint)
+      output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " [cost] of patch-here)
     ]
   ]
-
 end
 
 to calculate-costs [source-patch]
@@ -185,7 +181,6 @@ to calculate-costs [source-patch]
   let open []
   set open lput source-patch open
   let current-cost 0
-
   while [ length open != 0 ]
   [
     set current-patch item 0 open
@@ -214,41 +209,31 @@ end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; MOVE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to go
-    while [any? ships with [length current-path != 0]][move]
+    while [any? ships with [patch-here != destination]][move]
     stop
 end
 
 to move
   tick
-  ask ships with [length current-path != 0]
-      [
-        go-to-next-patch-in-current-path
-        set totaltime totaltime + time-interval
-        if length current-path = 0
-        [
-          output-show (word "Ship arrived after " (totaltime / 60) " minutes")
-        ]
-        hatch-nodes 1 [
-          set size .9
-          set shape "circle"
-          set color red
-          set shipID [who] of myself
-          set shipspeed [speed] of myself
-          set nodetime [totaltime] of myself
-          ]
-      ]
-end
-
-to go-to-next-patch-in-current-path
-  let current-patch first current-path
-  face current-patch
-  if patch-here = current-patch
+  ask ships with [patch-here != destination]
   [
-    set current-path remove-item 0 current-path
+    face min-one-of neighbors [cost]
+    fd ship-distance
+    set totaltime totaltime + time-interval
+    if patch-here = destination
+    [
+      output-show (word "Ship arrived after " (totaltime / 60) " minutes")
+    ]
+    hatch-nodes 1 [
+      set size .9
+      set shape "circle"
+      set color red
+      set shipID [who] of myself
+      set shipspeed [speed] of myself
+      set nodetime [totaltime] of myself
+    ]
   ]
-  fd ship-distance
 end
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; EXTRAS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to-report meters-per-patch
@@ -368,10 +353,10 @@ NIL
 1
 
 SLIDER
-830
-490
-950
-523
+10
+360
+130
+393
 land-prox-weight
 land-prox-weight
 0
@@ -383,10 +368,10 @@ NIL
 HORIZONTAL
 
 INPUTBOX
-735
-450
-825
-510
+10
+290
+70
+350
 land-prox
 5
 1
@@ -430,7 +415,7 @@ NIL
 INPUTBOX
 10
 220
-100
+70
 280
 min-depth
 -50
@@ -520,11 +505,11 @@ NIL
 HORIZONTAL
 
 TEXTBOX
-120
-210
 135
-360
-|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n
+210
+150
+416
+|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n
 11
 0.0
 1
@@ -547,7 +532,7 @@ NIL
 1
 
 INPUTBOX
-150
+145
 220
 215
 280
@@ -585,9 +570,9 @@ minutes
 
 INPUTBOX
 145
-295
+290
 215
-355
+350
 time-interval
 1
 1
@@ -606,9 +591,9 @@ km/h
 
 TEXTBOX
 220
-335
+330
 270
-361
+356
 seconds
 11
 0.0
