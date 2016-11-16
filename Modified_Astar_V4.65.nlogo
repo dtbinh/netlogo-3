@@ -15,6 +15,7 @@ patches-own [
   elev
   land
   parent-patch
+  cost
   ]
 
 ships-own [
@@ -131,11 +132,16 @@ end
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; A* ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to label-destination
   ask banners [die]
+  ask patches
+  [
+    set cost count patches * 2
+  ]
   ask waypoints with-max [who]
   [
     set destination self
     set shape "star"
     set size 6
+    set cost 0
     hatch-banners 1
     [
       set size 0
@@ -153,70 +159,57 @@ to label-destination
   ]
 end
 
-to find-shortest-path-to-destination
+to find-shortest-path-to-ships
   label-destination
   place-ships
+  ask destination
+  [
+    calculate-costs self
+    color-map
+  ]
   ask ships
   [
-    if (self != destination)
+    ifelse [cost] of current-waypoint = count patches * 2
     [
-      set current-path find-a-path current-waypoint destination
-      output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " length current-path)
-      color-map
+      output-show (word "A path from the source to the destination does not exist." )
+    ]
+    [
+      output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " [cost] of current-waypoint)
     ]
   ]
+
 end
 
-to-report find-a-path [source-patch destination-patch]
-  let search-done? false
+to calculate-costs [source-patch]
   let current-patch 0
-
   let open []
   set open lput source-patch open
+  let current-cost 0
 
-  while [ search-done? != true and length open != 0 ]
+  while [ length open != 0 ]
   [
     set current-patch item 0 open
     set open remove-item 0 open
     ask current-patch
     [
-      ifelse pxcor = [pxcor] of destination-patch and pycor = [pycor] of destination-patch
-      [
-        set search-done? true
-      ]
-      [
-        ask neighbors4 with [ elev <= min-depth and pcolor != gray ]
+        set current-cost [cost] of current-patch + 1
+        ask neighbors4 with [ elev <= min-depth and cost > current-cost + 1 ]
         [
             set pcolor gray
             set open lput self open
             set parent-patch current-patch
+            set cost current-cost
         ]
-        ask neighbors with [ elev <= min-depth and pcolor != gray]
+        set current-cost [cost] of current-patch + 1.4142
+        ask neighbors with [ elev <= min-depth and cost > current-cost ]
         [
           set pcolor gray
           set open lput self open
           set parent-patch current-patch
+          set cost current-cost
         ]
-      ]
     ]
   ]
-
-  if search-done? != true
-  [
-    user-message( "A path from the source to the destination does not exist." )
-    report []
-  ]
-  let search-path []
-  while [ current-patch != source-patch ]
-  [
-    ask current-patch
-    [
-      set pcolor white
-    ]
-    set search-path fput current-patch search-path
-    set current-patch [parent-patch] of current-patch
-  ]
-  report search-path
 end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; MOVE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -346,7 +339,7 @@ BUTTON
 192
 105
 find-path
-find-shortest-path-to-destination
+find-shortest-path-to-ships
 NIL
 1
 T
