@@ -21,8 +21,9 @@ patches-own [
 
 ships-own [
   speed
-  ship-distance ;How long advance in each tick
+  ship-distance
   totaltime
+  last-patches
   ]
 
 nodes-own [
@@ -176,6 +177,10 @@ to find-shortest-path-to-ships
     set pcolor gray
     set reachable true
     calculate-costs self
+    if pcolor = red
+    [
+      find-exit 0
+    ]
     ask patches with [land = false][set pcolor scale-color blue elev -3500 0]
   ]
   ask ships
@@ -187,6 +192,24 @@ to find-shortest-path-to-ships
     ]
     [
       output-show (word "distance to destination (absolute): " distance destination "km. Shortest Path Length: " [cost] of patch-here)
+    ]
+  ]
+end
+
+to find-exit [new-cost]
+  let nextPatch 0
+  ask self
+  [
+    set pcolor green
+    set cost new-cost
+    if any? neighbors with [pcolor = gray]
+    [
+      stop
+    ]
+    set nextPatch min-one-of neighbors with [reachable = true and pcolor != green] [cost]
+    ask nextPatch
+    [
+        find-exit new-cost + 0.1
     ]
   ]
 end
@@ -243,7 +266,7 @@ end
 
 to expand-border
   let distance-to-land 0
-  ask neighbors with [ pcolor = gray and self != destination ]
+  ask neighbors with [ pcolor = gray ]
   [
     set distance-to-land distance min-one-of borders [distance myself]
     if distance-to-land < land-prox
@@ -282,6 +305,12 @@ to move
     fd ship-distance
     if patch-here != currentPatch
     [
+       if any? nodes-here with [shipID = [who] of myself and (nodetime + (10 * time-interval)) < [totaltime] of myself  ]
+       [
+         output-show (word "The ship has run aground, reduce the land-prox and/or land-prox-weight values ")
+         die
+         stop
+       ]
        hatch-nodes 1 [
          set shipID [who] of myself
          set shipspeed [speed] of myself
@@ -435,7 +464,7 @@ INPUTBOX
 70
 350
 land-prox
-10
+5
 1
 0
 Number
