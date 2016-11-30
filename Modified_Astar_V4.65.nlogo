@@ -6,6 +6,7 @@ globals [
   destination
   ]
 
+breed [borders border]
 breed [waypoints waypoint]
 breed [nodes node]
 breed [ships ship]
@@ -14,8 +15,8 @@ breed [banners banner]
 patches-own [
   elev
   land
-  parent-patch
   cost
+  reachable
   ]
 
 ships-own [
@@ -38,20 +39,37 @@ end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; draw-map ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to color-map
-  ask patches with [elev >= 0]
+  ask patches
   [
-    set pcolor scale-color green elev 0 2000
-    set land true
+    ifelse elev >= 0
+    [
+      set pcolor scale-color green elev 0 2000
+      if any? neighbors with [ elev < 0 ]
+      [
+        sprout-borders 1 [set size 0]
+      ]
+      set land true
+    ]
+    [
+      set pcolor scale-color blue elev -3500 0
+      set land false
+    ]
+    set reachable false
+    set cost 0
   ]
-  ask patches with [elev < 0]
+end
+
+to recolor-ocean
+  ask patches with [land = false]
   [
     set pcolor scale-color blue elev -3500 0
-    set land false
+    set reachable false
+    set cost 0
   ]
 end
 
 to draw-map
-  let  data-source  "UTM/raster_PM.asc"
+  let data-source "UTM/raster_PM.asc"
   let elevation gis:load-dataset data-source
   let world (gis:envelope-of elevation)
   file-open data-source
@@ -69,8 +87,8 @@ to draw-map
   ]
   gis:set-world-envelope-ds (world)
   gis:apply-raster elevation elev
+  erase
   color-map
-  reset-ticks
 end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; create (waypoints, obstacles & ships) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -107,7 +125,7 @@ to place-obstacle
 end
 
 to place-ships
-  ask ships [die]
+  ask (turtle-set nodes ships) [die]
   ask waypoints with [patch-here != destination]
   [
     hatch-ships 1
@@ -127,17 +145,12 @@ end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; A* ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to label-destination
-  ask banners [die]
-  ask patches
-  [
-    set cost count patches * 2
-  ]
+  erase
   ask waypoints with-max [who]
   [
     set destination patch-here
     set shape "star"
     set size 6
-    set cost 0
     hatch-banners 1
     [
       set size 0
@@ -157,15 +170,17 @@ end
 
 to find-shortest-path-to-ships
   label-destination
-  place-ships
   ask destination
   [
+    set cost 0
+    set pcolor gray
+    set reachable true
     calculate-costs self
-    color-map
+    ask patches with [land = false][set pcolor scale-color blue elev -3500 0]
   ]
   ask ships
   [
-    ifelse [cost] of patch-here = count patches * 2
+    ifelse [reachable = false] of patch-here
     [
       output-show (word "A path from the source to the destination does not exist." )
       die
@@ -188,49 +203,95 @@ to calculate-costs [source-patch]
     ask current-patch
     [
         set current-cost [cost] of current-patch + 1
-        ask neighbors4 with [ elev <= min-depth and cost > current-cost + 1 ]
-        [
-            set pcolor gray
-            set open lput self open
-            set parent-patch current-patch
-            set cost current-cost
-        ]
-        set current-cost [cost] of current-patch + 1.4142
-        ask neighbors with [ elev <= min-depth and cost > current-cost ]
+        ask neighbors4 with [ land = false and elev <= min-depth and ( (pcolor != red and cost > current-cost) or reachable = false) ]
         [
           set pcolor gray
+          set reachable true
           set open lput self open
-          set parent-patch current-patch
           set cost current-cost
+        ]
+        set current-cost [cost] of current-patch + 1.4142
+        ask neighbors with [ land = false and elev <= min-depth and ( (pcolor != red and cost > current-cost) or reachable = false) ]
+        [
+          set pcolor gray
+          set reachable true
+          set open lput self open
+          set cost current-cost
+        ]
+        if any? neighbors with [ reachable = false ]
+        [
+          recalculate-cost current-patch
         ]
     ]
   ]
 end
 
+to recalculate-cost [border-patch]
+  ask border-patch [
+    let distance-to-land distance min-one-of borders [distance border-patch]
+    ifelse distance-to-land < land-prox
+    [
+      set pcolor red
+      set cost cost + (land-prox-weight * (land-prox - distance-to-land) / land-prox )
+      expand-border
+    ]
+    [
+      set pcolor blue
+    ]
+  ]
+end
+
+to expand-border
+  let distance-to-land 0
+  ask neighbors with [ pcolor = gray and self != destination ]
+  [
+    set distance-to-land distance min-one-of borders [distance myself]
+    if distance-to-land < land-prox
+    [
+      set pcolor red
+      set cost cost + (land-prox-weight * (land-prox - distance-to-land) / land-prox )
+      expand-border
+    ]
+  ]
+end
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; MOVE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 to go
-    while [any? ships with [patch-here != destination]][move]
-    stop
+  reset-ticks
+  place-ships
+  while [any? ships with [patch-here != destination]][move]
+  stop
 end
 
 to move
   tick
+  let currentPatch 0
+  let nextPatch 0
   ask ships with [patch-here != destination]
   [
-    face min-one-of neighbors [cost]
+    set currentPatch patch-here
+    set nextPatch min-one-of neighbors with [reachable = true] [cost]
+    if nextPatch = nobody
+    [
+      output-show (word "No route found!! ")
+      die
+      stop
+    ]
+    face nextPatch
     fd ship-distance
+    if patch-here != currentPatch
+    [
+       hatch-nodes 1 [
+         set shipID [who] of myself
+         set shipspeed [speed] of myself
+         set nodetime [totaltime] of myself
+       ]
+    ]
     set totaltime totaltime + time-interval
     if patch-here = destination
     [
       output-show (word "Ship arrived after " (totaltime / 60) " minutes")
-    ]
-    hatch-nodes 1 [
-      set size .9
-      set shape "circle"
-      set color red
-      set shipID [who] of myself
-      set shipspeed [speed] of myself
-      set nodetime [totaltime] of myself
     ]
   ]
 end
@@ -252,9 +313,10 @@ end
 
 to erase
   reset-ticks
-  ask (turtle-set ships nodes banners) [die]
+  ask banners [die]
+  ask (turtle-set nodes ships) [die]
   ask waypoints [ set size 4 set shape "circle" set color orange ]
-  color-map
+  recolor-ocean
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -373,7 +435,7 @@ INPUTBOX
 70
 350
 land-prox
-5
+10
 1
 0
 Number
