@@ -171,6 +171,10 @@ end
 
 to find-shortest-path-to-ships
   label-destination
+  if destination = 0
+  [
+    stop
+  ]
   ask destination
   [
     set cost 0
@@ -183,6 +187,7 @@ to find-shortest-path-to-ships
     ]
     ask patches with [land = false][set pcolor scale-color blue elev -3500 0]
   ]
+
   ask ships
   [
     ifelse [reachable = false] of patch-here
@@ -207,9 +212,12 @@ to find-exit [new-cost]
       stop
     ]
     set nextPatch min-one-of neighbors with [reachable = true and pcolor != green] [cost]
-    ask nextPatch
+    if nextPatch != nobody
     [
+      ask nextPatch
+      [
         find-exit new-cost + 0.1
+      ]
     ]
   ]
 end
@@ -305,7 +313,7 @@ to move
     fd ship-distance
     if patch-here != currentPatch
     [
-       if any? nodes-here with [shipID = [who] of myself and (nodetime + (10 * time-interval)) < [totaltime] of myself  ]
+       if any? nodes-here with [shipID = [who] of myself and (nodetime + (100 * time-interval)) < [totaltime] of myself  ]
        [
          output-show (word "The ship has run aground, reduce the land-prox and/or land-prox-weight values ")
          die
@@ -464,7 +472,7 @@ INPUTBOX
 70
 350
 land-prox
-5
+20
 1
 0
 Number
